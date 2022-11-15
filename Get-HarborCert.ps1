@@ -1,23 +1,40 @@
-$HarborURL = [Net.WebRequest]::Create("https://harborFQDNHere")
-$CertPath = "C:\temp\CertNameHere.cer"
+# ===================Variables===================
+# Prompt Input For Harbor FQDN
+Write-Host "Enter The Harbor Fully Qualified Domain Name: https://harborFQDNHere" -BackgroundColor Black -ForegroundColor Yellow
+$HarborFQDN = Read-Host
+[Uri]$HarborURL = "$HarborFQDN"
+$HarborURLHostName = $HarborURL.DNSSafeHost
+$WebCert = "C:\temp\$HarborURLHostName.cer" # must end in .cer
+$PemFormatCert = "C:\temp\$HarborURLHostName.pem" # must end in .pem
+
+#====================Execute=====================
+[Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+
 try 
 	{ 
-	$HarborURL.GetResponse() 
+		$WebConnect = [System.Net.Sockets.TcpClient]::new($HarborURL.Host, $HarborURL.Port)
+		$WebSSL = [System.Net.Security.SslStream]::new($WebConnect.GetStream())
+		$WebSSL.AuthenticateAsClient($HarborURL.Host)
+		$WebSSL.RemoteCertificate
+		$sslraw = $WebSSL.RemoteCertificate
+		[byte[]]$byteRaw = $sslraw.Export('Cert')
+		Set-Content -Path $WebCert -Value $byteRaw -Encoding Byte
+		certutil -f -encode $WebCert $PemFormatCert
+		$CertContent = Get-Content -raw $PemFormatCert -Encoding Byte
+		$certb64 = [Convert]::ToBase64String($CertContent)
+		Write-Host "Your Base64 Cert Is:" -BackgroundColor Black -ForegroundColor Yellow
+		Write-Host $certb64 -BackgroundColor Black -ForegroundColor Cyan
 	} 
 catch 
 	{
-	Write-Host "An error occurred." -BackgroundColor Black -ForegroundColor Red
-	Write-Host $_.ScriptStackTrace	-BackgroundColor Black -ForegroundColor Red
-	Write-Host $_.Exception.Message -BackgroundColor Black -ForegroundColor Red
-	$ErrorTraceCaught = $_.ScriptStackTrace
-	$ErrorMessageOut = $_.Exception.Message
+		Write-Host "An error occurred." -BackgroundColor Black -ForegroundColor Red
+		Write-Host $_.ScriptStackTrace	-BackgroundColor Black -ForegroundColor Red
+		Write-Host $_.Exception.Message -BackgroundColor Black -ForegroundColor Red
+		$ErrorTraceCaught = $_.ScriptStackTrace
+		$ErrorMessageOut = $_.Exception.Message
 	}
-$Webcert = $HarborURL.ServicePoint.Certificate
-$Rawcert = $Webcert.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert)
-set-content -value $Rawcert -encoding byte -path "$CertPath"
-$CertContent = Get-Content -raw $CertPath -Encoding Byte
-$certout = [Convert]::ToBase64String($CertContent)
-Write-Host "Your Base64 Cert Is:" -BackgroundColor Black -ForegroundColor Yellow
-Write-Host "-----BEGIN CERTIFICATE-----" -BackgroundColor Black -ForegroundColor Green
-Write-Host $certout -BackgroundColor Black -ForegroundColor Green
-Write-Host "-----END CERTIFICATE-----" -BackgroundColor Black -ForegroundColor Green
+finally
+	{
+		$WebSSL.Dispose()
+		$WebConnect.Dispose()
+	}
