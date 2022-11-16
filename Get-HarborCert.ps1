@@ -2,25 +2,24 @@
 # Prompt Input For Harbor FQDN
 Write-Host "Enter The Harbor Fully Qualified Domain Name: https://harborFQDNHere" -BackgroundColor Black -ForegroundColor Yellow
 $HarborFQDN = Read-Host
-[Uri]$HarborURL = "$HarborFQDN"
-$HarborURLHostName = $HarborURL.DNSSafeHost
-$WebCert = "C:\temp\$HarborURLHostName.cer" # must end in .cer
-$PemFormatCert = "C:\temp\$HarborURLHostName.pem" # must end in .pem
+[Uri]$HarborURI = "$HarborFQDN"
+$HarborURIHostName = $HarborURI.DNSSafeHost
+$WebCert = "C:\temp\$HarborURIHostName.cer" # must end in .cer
+$PemFormatCert = "C:\temp\$HarborURIHostName.pem" # must end in .pem
 
 #====================Execute=====================
 [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+[System.Net.ServicePointManager]::DefaultConnectionLimit = 1024
 
 try 
 	{ 
-		$WebConnect = [System.Net.Sockets.TcpClient]::new($HarborURL.Host, $HarborURL.Port)
-		$WebSSL = [System.Net.Security.SslStream]::new($WebConnect.GetStream())
-		$WebSSL.AuthenticateAsClient($HarborURL.Host)
-		$WebSSL.RemoteCertificate
-		$sslraw = $WebSSL.RemoteCertificate
-		[byte[]]$byteRaw = $sslraw.Export('Cert')
-		Set-Content -Path $WebCert -Value $byteRaw -Encoding Byte
+		$HarborWebConnect = [Net.WebRequest]::Create("$HarborFQDN")
+		$HarborWebConnect.GetResponse()
+		$Webcert = $HarborWebConnect.ServicePoint.Certificate
+		[byte[]]$Rawcert = $Webcert.Export('Cert')
+		set-content -value $Rawcert -encoding byte -path "$WebCert"
 		certutil -f -encode $WebCert $PemFormatCert
-		$CertContent = Get-Content -raw $PemFormatCert -Encoding Byte
+		$CertContent = Get-Content -raw -Path $PemFormatCert -Encoding Byte
 		$certb64 = [Convert]::ToBase64String($CertContent)
 		Write-Host "Your Base64 Cert Is:" -BackgroundColor Black -ForegroundColor Yellow
 		Write-Host $certb64 -BackgroundColor Black -ForegroundColor Cyan
@@ -35,6 +34,5 @@ catch
 	}
 finally
 	{
-		$WebSSL.Dispose()
-		$WebConnect.Dispose()
+		$HarborWebConnect.close
 	}
